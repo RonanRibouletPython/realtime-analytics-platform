@@ -2,38 +2,38 @@
 
 # This script runs after the devcontainer is created
 
-echo "🚀 Setting up development environment..."
+echo "Setting up development environment..."
 
 # Verify Python installation
-echo "📍 Python version:"
+echo "Python version:"
 python --version
 
 # Verify uv installation
-echo "📍 uv version:"
+echo "uv version:"
 uv --version
 
 # Verify database connection
-echo "📍 Waiting for PostgreSQL to be ready..."
+echo "Waiting for PostgreSQL to be ready..."
 until pg_isready -h localhost -p 5432 -U analytics; do
   echo "Waiting for postgres..."
   sleep 2
 done
-echo "✅ PostgreSQL is ready!"
+echo "PostgreSQL is ready!"
 
 # Verify Redis connection
-echo "📍 Checking Redis..."
+echo "Checking Redis..."
 until redis-cli ping; do
   echo "Waiting for Redis..."
   sleep 2
 done
-echo "✅ Redis is ready!"
+echo "Redis is ready!"
 
 # Set git config (optional, customize with your info)
 git config --global core.autocrlf input
 git config --global init.defaultBranch main
 
 echo ""
-echo "✨ DevContainer setup complete!"
+echo "DevContainer setup complete!"
 echo ""
 echo "Next steps:"
 echo "  1. cd services/ingestion"
