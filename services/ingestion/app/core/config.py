@@ -10,14 +10,14 @@ class Settings(BaseSettings):
     ENV: Literal["development", "production"] = "development"
 
     # DB config (Postgres)
-    POSTGRES_USER: str = "admin"
-    POSTGRES_PASSWORD: str = "password"
-    POSTGRES_SERVER: str = "db"
+    POSTGRES_USER: str = "analytics"
+    POSTGRES_PASSWORD: str = "analytics"
+    POSTGRES_SERVER: str = "localhost"
     POSTGRES_PORT: int = 5432
-    POSTGRES_DB: str = "analytics_dev"
+    POSTGRES_DB: str = "analytics"
 
     # Redis config
-    REDIS_HOST: str = "redis"
+    REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
 
     @property

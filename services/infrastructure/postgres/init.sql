@@ -1,15 +1,14 @@
--- Initial database setup
+-- Enable TimescaleDB extension (Required for the timescaledb image)
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+
+-- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Create schemas
-CREATE SCHEMA IF NOT EXISTS public;
+-- Create Schema
+CREATE SCHEMA IF NOT EXISTS analytics_schema;
 
--- Grant permissions
-GRANT ALL PRIVILEGES ON DATABASE analytics TO analytics;
-GRANT ALL ON SCHEMA public TO analytics;
-
--- Log initialization
+-- Log success
 DO $$
 BEGIN
-    RAISE NOTICE 'Database initialized successfully';
+    RAISE NOTICE 'Database initialized successfully with TimescaleDB';
 END $$;

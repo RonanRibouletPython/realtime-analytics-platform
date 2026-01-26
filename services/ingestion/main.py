@@ -1,10 +1,14 @@
 from contextlib import asynccontextmanager
 
+import redis.asyncio as redis
 import structlog
 from app.core.config import settings
-from app.core.database import engine
+from app.core.database import engine, get_db
 from app.core.logging import setup_logging
-from fastapi import FastAPI
+from app.core.redis_client import get_redis_client
+from fastapi import Depends, FastAPI, HTTPException
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger()
 
@@ -27,6 +31,15 @@ app = FastAPI(
 )
 
 
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "status": "Root endpoint healthy",
+        "message": "Enjoy your time with the API :)",
+    }
+
+
 @app.get("/health")
 async def health_check():
     """Basic health check endpoint"""
@@ -35,6 +48,55 @@ async def health_check():
         "service": "ingestion",
         "environment": settings.ENV,
     }
+
+
+@app.get("/redis_health")
+async def redis_health_check(redis: redis.Redis = Depends(get_redis_client)):
+    """Check the health of the Redis connection"""
+    health_status = {
+        "status": "healthy",
+        "service": "ingestion",
+        "environment": settings.ENV,
+        "components": {"redis": "unknown"},
+    }
+
+    try:
+        await redis.ping()
+        health_status["components"]["redis"] = "up"
+    except Exception as e:
+        health_status["status"] = "degraded"
+        health_status["components"]["redis"] = "down"
+        logger.error("health_check_failed", component="redis", error=str(e))
+
+    if health_status["status"] != "healthy":
+        raise HTTPException(status_code=503, detail=health_status)
+
+    return health_status
+
+
+@app.get("/db_health")
+async def db_health_check(
+    db: AsyncSession = Depends(get_db),
+):
+    """Check the health of the Postrgres DB connection"""
+    health_status = {
+        "status": "healthy",
+        "service": "ingestion",
+        "environment": settings.ENV,
+        "components": {
+            "database": "unknown",
+        },
+    }
+
+    try:
+        await db.execute(text("SELECT 1"))
+        health_status["components"]["database"] = "up"
+    except Exception as e:
+        health_status["status"] = "degraded"
+        health_status["components"]["database"] = "down"
+        logger.error("health_check_failed", component="database", error=str(e))
+
+    return health_status
 
 
 if __name__ == "__main__":
