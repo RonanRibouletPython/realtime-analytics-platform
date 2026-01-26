@@ -3,7 +3,6 @@
   "dockerComposeFile": "docker-compose.yml",
   "service": "devcontainer",
   "workspaceFolder": "/workspace",
-  
   "customizations": {
     "vscode": {
       "extensions": [
@@ -39,7 +38,6 @@
       }
     }
   },
-
   "forwardPorts": [
     8000,
     8001,
@@ -49,7 +47,6 @@
     3000,
     9090
   ],
-
   "portsAttributes": {
     "8000": {
       "label": "Ingestion API",
@@ -62,12 +59,14 @@
       "label": "Redis"
     }
   },
-
-  "postCreateCommand": "bash .devcontainer/post-create.sh",
-
+  "postCreateCommand": "bash post-create.sh",
   "remoteUser": "vscode",
-  
   "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "version": "latest",
+      "enableNonRootDocker": "true",
+      "moby": "true"
+    },
     "ghcr.io/devcontainers/features/git:1": {},
     "ghcr.io/devcontainers/features/github-cli:1": {}
   }
