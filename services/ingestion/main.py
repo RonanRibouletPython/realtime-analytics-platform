@@ -2,10 +2,12 @@ from contextlib import asynccontextmanager
 
 import redis.asyncio as redis
 import structlog
+from app.api.metrics import router as metrics_router
 from app.core.config import settings
-from app.core.database import engine, get_db
+from app.core.database import Base, engine, get_db
 from app.core.logging import setup_logging
 from app.core.redis_client import get_redis_client
+from app.models.metric import Metric
 from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +20,12 @@ async def lifespan(app: FastAPI):
     # Startup: Setup logging
     setup_logging()
     logger.info("startup", msg="Ingestion Service Starting...")
+
+    # Create the DB tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("db_tables_creation", msg="database tables created")
+
     yield
     # Shutdown: Close DB connection
     logger.info("shutdown", msg="Closing Database Connection...")
@@ -29,6 +37,8 @@ app = FastAPI(
     lifespan=lifespan,
     openapi_url=f"/{settings.API_V1}/openapi.json",
 )
+
+app.include_router(metrics_router, prefix=f"/{settings.API_V1}", tags=["metrics"])
 
 
 @app.get("/")
