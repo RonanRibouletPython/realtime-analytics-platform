@@ -2,7 +2,7 @@
 
 A high-performance, multi-tenant analytics platform capable of ingesting, processing, and serving real-time metrics. This project demonstrates distributed system patterns, event-driven architecture, and time-series data management.
 
-## 🏗 Architecture
+## Architecture
 
 ```mermaid
 graph TD
@@ -25,7 +25,7 @@ graph TD
     end
 ```
 
-## 🛠 Tech Stack
+## Tech Stack
 
 - **Language:** Python 3.12+ (managed by `uv`)
 - **API Framework:** FastAPI (Async)
@@ -35,7 +35,7 @@ graph TD
 - **Orchestration:** Docker Compose
 - **Observability:** Prometheus, Grafana, OpenTelemetry
 
-## 🗺 Roadmap & Progress
+## Roadmap & Progress
 
 ### Phase 1: Foundation (Weeks 1-3)
 - [x] Project structure setup with `uv` workspaces
