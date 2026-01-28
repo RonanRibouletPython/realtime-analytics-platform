@@ -28,9 +28,13 @@ until redis-cli ping; do
 done
 echo "Redis is ready!"
 
-# Set git config (optional, customize with your info)
-git config --global core.autocrlf input
-git config --global init.defaultBranch main
+# Verify Kafka connection
+echo "Checking Kafka..."
+until python -c "import socket; s = socket.socket(); s.settimeout(1); s.connect(('localhost', 9092))" > /dev/null 2>&1; do
+  echo "Waiting for Kafka at localhost:9092..."
+  sleep 2
+done
+echo "Kafka is ready!"
 
 echo ""
 echo "DevContainer setup complete!"
