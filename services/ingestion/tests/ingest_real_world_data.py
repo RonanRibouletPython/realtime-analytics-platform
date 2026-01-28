@@ -137,7 +137,7 @@ async def continuous_monitoring(interval_seconds: int = 60, duration_minutes: in
         interval_seconds: How often to fetch data
         duration_minutes: How long to run
     """
-    logger.info(f"Starting continuous monitoring...")
+    logger.info("Starting continuous monitoring...")
     logger.info(f"Interval: {interval_seconds}s")
     logger.info(f"Duration: {duration_minutes} minutes\n")
 
