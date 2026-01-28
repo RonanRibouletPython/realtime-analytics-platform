@@ -38,17 +38,17 @@ graph TD
 ## 🗺 Roadmap & Progress
 
 ### Phase 1: Foundation (Weeks 1-3)
-- [ ] Project structure setup with `uv` workspaces
-- [ ] Docker Compose environment (Postgres/Timescale, Redis)
-- [ ] Ingestion Service skeleton (FastAPI)
-- [ ] Database connection (SQLAlchemy Async)
-- [ ] Basic health checks & structured logging
+- [x] Project structure setup with `uv` workspaces
+- [x] Docker Compose environment (Postgres/Timescale, Redis)
+- [x] Ingestion Service skeleton (FastAPI)
+- [x] Database connection (SQLAlchemy Async)
+- [x] Basic health checks & structured logging
 
 ### Phase 2: Kafka Integration (Weeks 4-6)
-- [ ] Add Kafka/Redpanda to Docker Compose
-- [ ] Implement Kafka Producer in Ingestion Service
+- [x] Add Kafka to Docker Compose
+- [x] Implement Kafka Producer in Ingestion Service
 - [ ] Implement Schema Registry (Avro)
-- [ ] Create Consumer Service (Worker)
+- [x] Create Consumer Service (Worker)
 - [ ] End-to-end data flow (API -> Kafka -> DB)
 
 ### Phase 3: Time-Series & Caching (Weeks 7-9)
