@@ -8,7 +8,7 @@
 
 ---
 
-## 📋 Table of Contents
+## Table of Contents
 
 1. [What We Built](#what-we-built)
 2. [Technical Stack Deep Dive](#technical-stack-deep-dive)
@@ -24,7 +24,7 @@
 
 ---
 
-## 🎯 What We Built
+## What We Built
 
 ### High-Level Overview
 
@@ -602,7 +602,7 @@ uv run pytest
 
 ---
 
-## 🧠 Core Concepts Learned
+## Core Concepts Learned
 
 ### 1. **Async Programming**
 
@@ -840,7 +840,7 @@ REFRESH MATERIALIZED VIEW metrics_hourly;
 
 ---
 
-## 🏗️ Architecture Patterns
+## Architecture Patterns
 
 ### 1. **Layered Architecture**
 
