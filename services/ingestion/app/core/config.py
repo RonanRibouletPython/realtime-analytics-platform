@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
 
+    # Kafka config
+    KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
+    KAFKA_TOPIC_METRICS: str = "metrics_ingestion"
+
     @property
     def DB_URL(
         self,

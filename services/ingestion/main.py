@@ -5,9 +5,9 @@ import structlog
 from app.api.metrics import router as metrics_router
 from app.core.config import settings
 from app.core.database import Base, engine, get_db
+from app.core.kafka import get_kafka_producer, stop_kafka_producer
 from app.core.logging import setup_logging
 from app.core.redis_client import get_redis_client
-from app.models.metric import Metric
 from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,10 +26,16 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     logger.info("db_tables_creation", msg="database tables created")
 
+    # Start Kafka producer
+    await get_kafka_producer()
+
     yield
     # Shutdown: Close DB connection
     logger.info("shutdown", msg="Closing Database Connection...")
     await engine.dispose()
+
+    # Stop Kafka producer
+    await stop_kafka_producer()
 
 
 app = FastAPI(
