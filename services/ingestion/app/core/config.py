@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     # Kafka config
     KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
     KAFKA_TOPIC_METRICS: str = "metrics_ingestion"
+    # DLQ config
+    KAFKA_TOPIC_METRICS_DLQ: str = "metrics_dlq"
 
     @property
     def DB_URL(
