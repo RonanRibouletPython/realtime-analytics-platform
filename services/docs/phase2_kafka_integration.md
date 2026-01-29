@@ -810,9 +810,9 @@ docker exec -it <kafka-container> \
 
 ---
 
-**Previous:** [Phase 1 - Foundation](./PHASE1_LEARNING_SUMMARY.md)  
+**Previous:** [Phase 1 - Foundation](./phase1_technical_summary.md)  
 **Next:** Phase 3 - Stream Processing & Time-Series Optimization  
-**Project:** [Main README](../README.md)
+**Project:** [Main README](../../README.md)
 
 ---
 
