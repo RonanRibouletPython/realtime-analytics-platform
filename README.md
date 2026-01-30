@@ -49,7 +49,7 @@ graph TD
 - [x] Implement Kafka Producer in Ingestion Service
 - [ ] Implement Schema Registry (Avro)
 - [x] Create Consumer Service (Worker)
-- [ ] End-to-end data flow (API -> Kafka -> DB)
+- [x] End-to-end data flow (API -> Kafka -> DB)
 
 ### Phase 3: Time-Series & Caching (Weeks 7-9)
 - [ ] Enable TimescaleDB hypertables
