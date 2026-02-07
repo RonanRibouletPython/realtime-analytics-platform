@@ -5,7 +5,7 @@ import structlog
 from app.api.metrics import router as metrics_router
 from app.core.config import settings
 from app.core.database import Base, engine, get_db
-from app.core.kafka import get_kafka_producer, stop_kafka_producer
+from app.core.kafka import flush_producer
 from app.core.logging import setup_logging
 from app.core.redis_client import get_redis_client
 from fastapi import Depends, FastAPI, HTTPException
@@ -26,17 +26,16 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     logger.info("db_tables_creation", msg="database tables created")
 
-    # Start Kafka producer
-    await get_kafka_producer()
-
+    # confluent-kafka initializes the producer globally in kafka.py file
     yield
+    
     # Shutdown: Close DB connection
     logger.info("shutdown", msg="Closing Database Connection...")
     await engine.dispose()
-
-    # Stop Kafka producer
-    await stop_kafka_producer()
-
+    
+    # Shutdown: Flush Kafka messages
+    # This ensures items in the buffer are sent before the container dies
+    flush_producer()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

@@ -45,7 +45,8 @@
     6379,
     9092,
     3000,
-    9090
+    9090,
+    8081
   ],
   "portsAttributes": {
     "8000": {
@@ -57,6 +58,9 @@
     },
     "6379": {
       "label": "Redis"
+    },
+    "8081": {
+      "label": "Schema Registry"
     }
   },
   "postCreateCommand": "bash post-create.sh",

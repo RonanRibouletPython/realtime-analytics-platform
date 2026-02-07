@@ -1,138 +1,124 @@
 import asyncio
-import json
 import time
 from datetime import datetime as dt
+from datetime import timezone as tz
 
 import structlog
-from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.dlq import send_to_dlq
 from app.core.metrics_tracker import tracker
 from app.models.metric import Metric
-from sqlalchemy.ext.asyncio import AsyncSession
+from confluent_kafka import DeserializingConsumer, KafkaException
+from confluent_kafka.schema_registry import SchemaRegistryClient
+from confluent_kafka.schema_registry.avro import AvroDeserializer
+from confluent_kafka.serialization import StringDeserializer
 
 logger = structlog.get_logger()
 
+# Note
+# Consumer fetches the schema automatically
+# Deserialize Avro into a Python dictionary
+# Convert timestamp into a datetime object
+# Writes to the DB
+# Commits the offset automatically
 
-async def process_message(
-    session: AsyncSession, message_value: dict, producer: AIOKafkaProducer
-) -> bool:
+# Schema registry
+schema_registry = SchemaRegistryClient({"url": settings.SCHEMA_REGISTRY_URL})
+
+avro_deserializer = AvroDeserializer(schema_registry)
+
+# Kafka consumer
+consumer = DeserializingConsumer(
+    {
+        "bootstrap.servers": settings.KAFKA_BOOTSTRAP_SERVERS,
+        "group.id": "metrics_worker_group",
+        "auto.offset.reset": "earliest",
+        "enable.auto.commit": False,
+        "key.deserializer": StringDeserializer("utf_8"),
+        "value.deserializer": avro_deserializer,
+    }
+)
+
+consumer.subscribe([settings.KAFKA_TOPIC_METRICS])
+
+
+async def process_message(payload: dict) -> bool:
     """
-    Process a single message from Kafka and save to DB.
+    Process one Kafka message.
 
     Returns:
-        bool:
-            True if successful and sent to the DLQ
-            False if should retry
+        True  -> commit offset
+        False -> retry
     """
     start_time = time.time()
 
     try:
-        # Convert the timestamp string into a datetime object
-        message_value["timestamp"] = dt.fromisoformat(message_value["timestamp"])
+        async with AsyncSessionLocal() as session:
+            metric = Metric(
+                name=payload["name"],
+                value=payload["value"],
+                timestamp=payload["timestamp"],
+                labels=payload.get("labels", {}),
+            )
 
-        # Convert the raw dictionnary into SQLAlchemy model
-        metric = Metric(
-            name=message_value.get("name"),
-            value=message_value.get("value"),
-            timestamp=message_value.get("timestamp"),
-            labels=message_value.get("labels", {}),
-        )
+            session.add(metric)
+            await session.commit()
 
-        session.add(metric)
-        await session.commit()
+        processing_time = (time.time() - start_time) * 1000
+        tracker.record_success(processing_time)
 
         logger.info(
             "metric_processed",
             name=metric.name,
             value=metric.value,
-            partition=message_value.get("partition"),
-            offset=message_value.get("offset"),
         )
 
-        processing_time = (time.time() - start_time) * 1000
-        tracker.record_success(processing_time)
         return True
 
     except ValueError as e:
-        # Invalid data format - send directly to the DLQ
-        logger.error("invalid_message_format", error=str(e), payload=message_value)
-        await send_to_dlq(producer, message_value, f"Invalid format: {str(e)}")
-        await session.rollback()
+        logger.error("invalid_message", error=str(e), payload=payload)
+        send_to_dlq(payload, str(e))
         tracker.record_dlq()
-        return True  # mark as resolved to avoid retries
+        return True
 
     except Exception as e:
-        # Database error
-        logger.error("processing_error", error=str(e), payload=message_value)
-        await session.rollback()
+        logger.error("processing_failed", error=str(e), payload=payload)
         tracker.record_failure()
-        return False  # retry
+        return False
 
 
 async def consume():
-    """
-    Main consumer loop with error handling
-    """
-    logger.info("Worker starting!", topic=settings.KAFKA_TOPIC_METRICS)
-
-    # Initialize the Consumer
-    consumer = AIOKafkaConsumer(
-        settings.KAFKA_TOPIC_METRICS,
-        bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
-        group_id="metrics_worker_group",
-        value_deserializer=lambda m: json.loads(m.decode("utf-8")),
-        auto_offset_reset="earliest",  # Start from beginning if no history exists
-        enable_auto_commit=False,  # manual commit for reliability
-    )
-
-    # Init Producer for DLQ
-    producer = AIOKafkaProducer(
-        bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
-        value_serializer=lambda v: json.dumps(v).encode("utf-8"),
-    )
-
-    await consumer.start()
-    await producer.start()
+    logger.info("worker_started", topic=settings.KAFKA_TOPIC_METRICS)
 
     try:
-        logger.info("Worker listening!")
+        while True:
+            msg = consumer.poll(1.0)
 
-        # Continuous loop: Wait for messages
-        async for msg in consumer:
-            # We create a NEW database session for every batch/message
-            # to ensure fresh connections and transaction isolation
-            async with AsyncSessionLocal() as session:
-                # Inject partition/offset info for debugging
-                payload = msg.value
-                payload["partition"] = msg.partition
-                payload["offset"] = msg.offset
+            if msg is None:
+                continue
 
-                success = await process_message(session, payload, producer)
+            if msg.error():
+                raise KafkaException(msg.error())
 
-                if success:
-                    # Commit offset only if proceed successfully
-                    await consumer.commit()
-                else:
-                    # Log failure but no flow block
-                    logger.warning(
-                        "message_processing_failed",
-                        partition=msg.partition,
-                        offset=msg.offset,
-                    )
+            payload = msg.value()
+
+            success = await process_message(payload)
+
+            if success:
+                consumer.commit(msg)
 
     except Exception as e:
-        logger.critical("Worker crashed", error=str(e))
+        logger.critical("worker_crashed", error=str(e))
     finally:
-        await consumer.stop()
-        await producer.stop()
-        logger.info("Worker stopped")
+        consumer.close()
+        logger.info("worker_stopped")
 
 
 if __name__ == "__main__":
-    # Run the async loop
+    import asyncio
+
     try:
         asyncio.run(consume())
     except KeyboardInterrupt:
-        logger.info("Worker interrupted by user")
+        logger.info("worker_interrupted_manually")

@@ -1,0 +1,24 @@
+{
+  "type": "record",
+  "name": "MetricEvent",
+  "namespace": "com.analytics.metrics",
+  "fields": [
+    { "name": "name", "type": "string" },
+    { "name": "value", "type": "double" },
+    {
+      "name": "timestamp",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      }
+    },
+    {
+      "name": "labels",
+      "type": {
+        "type": "map",
+        "values": "string"
+      },
+      "default": {}
+    }
+  ]
+}
