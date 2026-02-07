@@ -1,7 +1,7 @@
 # Phase 2: Kafka Integration - Event-Driven Architecture
 
-**Completed:** January 27, 2025  
-**Duration:** ~4-6 hours  
+**Completed:** February 07, 2026 
+**Duration:** ~8 hours 
 **Status:** COMPLETE  
 **Previous Phase:** [Phase 1 - Foundation](./phase1_technical_summary.md)
 
@@ -9,11 +9,10 @@
 
 ## What We Built
 
-Transformed the synchronous metrics ingestion API into an **event-driven, asynchronous system** using Apache Kafka. This enables:
-- Non-blocking API responses
-- Decoupled ingestion from processing
-- Horizontal scalability
-- Fault tolerance and message replay
+Transformed the synchronous metrics ingestion API into an **event-driven, asynchronous system** using Apache Kafka and Confluent Schema Registry. This enables:
+- Strict Data Validation via Avro Schemas
+- Non-blocking API responses (Fire and Forget)
+- Decoupled ingestion from database writing
 - Dead Letter Queue for poison messages
 
 ### Architecture Evolution
@@ -26,13 +25,13 @@ Client → FastAPI → PostgreSQL
 
 **Phase 2 (Event-Driven):**
 ```
-Client → FastAPI → Kafka → Consumer Worker → PostgreSQL
+Client → FastAPI → [Schema Registry Check] → Kafka (Avro) → Consumer Worker → PostgreSQL
          (Returns immediately)   (Background processing)
 ```
 
 ---
 
-## System Architecture
+## System Architecture (TODO: update the schema to add schema registry and Avro serialisation)
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                  HTTP Clients                            │
@@ -102,14 +101,49 @@ Client → FastAPI → Kafka → Consumer Worker → PostgreSQL
 
 ## Technical Stack Additions
 
-### 1. **Apache Kafka 3.6+**
-
+### 1. **Confluent Kafka (Python Client)**
+We chose confluent-kafka (based on librdkafka) over aiokafka or kafka-python
 **Why Kafka:**
 - Industry-standard event streaming platform
 - Used by Uber, Netflix, LinkedIn, Airbnb
 - Handles millions of messages per second
 - Durable message storage (not just a queue)
 - Horizontal scalability
+
+**Why Confluent Kafka**
+- Performance: High-performance C-binding
+- Reliability: Industry standard for production Python services.
+- Schema Registry Support: Native integration for Avro/Protobuf
+- Synchronous Producer: Allows "fire-and-forget" with internal buffering for maximum throughput
+
+### 2. **Avro Serialization & Schema Registry**
+Instead of sending raw JSON, we now send Avro binary data
+**Why Avro**
+- Compact: Binary format is smaller than JSON (faster network transfer)
+- Strict Typing: Ensures downstream consumers don't crash due to missing fields
+- Schema Evolution: Allows us to add fields later without breaking existing consumers
+
+The Schema (metric_event.avsc):
+```json
+{
+  "type": "record",
+  "name": "MetricEvent",
+  "fields": [
+    {"name": "name", "type": "string"},
+    {"name": "value", "type": "double"},
+    {"name": "timestamp", "type": "long", "logicalType": "timestamp-millis"},
+    {"name": "labels", "type": {"type": "map", "values": "string"}}
+  ]
+}
+```
+### 3. **The Producer Pattern (Fire-and-Forget)**
+We moved from await send_and_wait to a high-throughput synchronous pattern
+**How it works**
+1. API calls producer.produce()
+2. Message is added to a local C-buffer immediately
+3. The request returns 202 Accepted to the user (< 10ms)
+4. A background thread sends the batch to Kafka efficiently
+5. Shutdown Safety: We implemented a flush() method in lifespan to ensure buffer is emptied before the app exits
 
 **Key Concepts Learned:**
 
@@ -127,14 +161,6 @@ Topic: metrics
 - Scalability (add more partitions = more consumers)
 
 #### b) Consumer Groups
-```python
-# Same group_id = work distribution
-consumer1 = AIOKafkaConsumer(..., group_id="metrics_worker_group")
-consumer2 = AIOKafkaConsumer(..., group_id="metrics_worker_group")
-
-# Kafka automatically assigns different partitions to each consumer!
-```
-
 **Scaling pattern:**
 ```bash
 # Run multiple workers (same group_id)
@@ -145,81 +171,13 @@ python worker.py &  # Consumer 3
 ```
 
 #### c) Offset Management
-```python
-# Manual commit for reliability
-enable_auto_commit=False
-
-# After successful processing
-await consumer.commit()  # Checkpoint: "I processed up to message X"
-
-# If consumer crashes, restart from last committed offset
-```
-
 **Why manual commits:**
 - Prevent data loss (commit only after DB write succeeds)
 - Enable retry logic (don't commit if processing fails)
 - Exactly-once semantics possible
-
-#### d) Message Serialization
-```python
-# Producer: Python dict → JSON → bytes
-value_serializer=lambda v: json.dumps(v).encode("utf-8")
-
-# Consumer: bytes → JSON → Python dict
-value_deserializer=lambda m: json.loads(m.decode("utf-8"))
-```
-
 ---
 
-### 2. **aiokafka (Async Kafka Client)**
-
-**Why aiokafka over kafka-python:**
-- Native async/await support
-- Non-blocking I/O
-- Perfect for FastAPI integration
-
-**Producer Pattern:**
-```python
-# Singleton pattern (reuse connection)
-_producer: AIOKafkaProducer | None = None
-
-async def get_kafka_producer() -> AIOKafkaProducer:
-    global _producer
-    if _producer is None:
-        _producer = AIOKafkaProducer(
-            bootstrap_servers="localhost:9092",
-            value_serializer=lambda v: json.dumps(v).encode("utf-8")
-        )
-        await _producer.start()
-    return _producer
-```
-
-**Why singleton:**
-- Connection pooling (expensive to create)
-- Reuse across requests
-- Graceful shutdown management
-
-**Consumer Pattern:**
-```python
-consumer = AIOKafkaConsumer(
-    'metrics',
-    bootstrap_servers='localhost:9092',
-    group_id='metrics_worker_group',
-    auto_offset_reset='earliest',  # Start from beginning if new
-    enable_auto_commit=False        # Manual commits
-)
-
-await consumer.start()
-
-async for msg in consumer:
-    # Process message
-    await process(msg.value)
-    
-    # Commit offset
-    await consumer.commit()
-```
-
----
+### 2. Confluent Kafka (documentation to add)
 
 ### 3. **Dead Letter Queue (DLQ) Pattern**
 
@@ -227,26 +185,6 @@ async for msg in consumer:
 - Malformed JSON
 - Invalid data types
 - Business rule violations
-
-**Solution:** Route to DLQ for manual inspection
-```python
-async def process_message(session, message, producer):
-    try:
-        # Normal processing
-        metric = Metric(**message)
-        session.add(metric)
-        await session.commit()
-        return True
-        
-    except ValueError as e:
-        # Data validation failed - send to DLQ
-        await send_to_dlq(producer, message, str(e))
-        return True  # Don't retry (it will fail again)
-        
-    except Exception as e:
-        # Database error - might be temporary
-        return False  # Retry later
-```
 
 **DLQ Message Structure:**
 ```json
@@ -380,112 +318,8 @@ if lag > 10000:
     send_alert("Consumer falling behind!")
 ```
 
----
-
-### 4. **Graceful Shutdown**
-
-**Problem:** Ctrl+C kills worker mid-processing
-- Message half-processed
-- Database transaction incomplete
-- Offset not committed
-
-**Solution:** Signal Handlers
-```python
-shutdown_flag = False
-
-def signal_handler(sig, frame):
-    global shutdown_flag
-    shutdown_flag = True  # Set flag instead of immediate exit
-
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
-
-async for msg in consumer:
-    if shutdown_flag:
-        break  # Finish current message, then exit
-    
-    await process(msg)
-
-# Cleanup
-await consumer.commit()
-await consumer.stop()
-```
-
-**Why this matters:**
-- No data loss
-- Clean shutdown in production
-- Kubernetes/Docker compatibility
-
----
-
-## Code Walkthrough
-
-### Complete Message Flow
-
-**1. Client sends HTTP request:**
-```bash
-POST /api/v1/metrics
-{
-  "name": "cpu_usage",
-  "value": 85.5,
-  "labels": {"host": "server-01"}
-}
-```
-
-**2. FastAPI endpoint (non-blocking):**
-```python
-@router.post("/metrics", status_code=202)
-async def ingest_metric(metric: MetricCreate):
-    producer = await get_kafka_producer()  # Singleton
-    
-    # Send to Kafka (async, but waits for acknowledgment)
-    await producer.send_and_wait(
-        topic="metrics",
-        value=metric.model_dump(mode="json")
-    )
-    
-    # Return immediately (message queued)
-    return {"status": "queued", "message": "Accepted"}
-```
-**Response time:** <10ms (vs 50-100ms for direct DB write)
-
-**3. Kafka stores message:**
-```
-Topic: metrics
-Partition: 0 (determined by hash of key, or round-robin)
-Offset: 12345 (sequential ID within partition)
-```
-
-**4. Consumer fetches message:**
-```python
-async for msg in consumer:
-    # msg.topic = "metrics"
-    # msg.partition = 0
-    # msg.offset = 12345
-    # msg.value = {"name": "cpu_usage", "value": 85.5, ...}
-    
-    await process_message(msg.value)
-    await consumer.commit()  # Checkpoint
-```
-
-**5. Process and save:**
-```python
-async def process_message(message_value):
-    metric = Metric(
-        name=message_value["name"],
-        value=message_value["value"],
-        timestamp=datetime.fromisoformat(message_value["timestamp"]),
-        labels=message_value["labels"]
-    )
-    
-    session.add(metric)
-    await session.commit()
-```
-
-**Total latency:** 100-500ms from HTTP request to DB persistence
-- API response: <10ms
-- Background processing: 90-490ms
-- User experience: Instant ✨
+### 4. ***Schema Registry Workflow***
+TODO
 
 ---
 
@@ -623,13 +457,13 @@ uv run python app/worker.py
 docker-compose up -d
 
 # 2. Start API
-uv run uvicorn app.main:app --reload &
+bash run.sh
 
 # 3. Start consumer
-uv run python app/worker.py &
+bash worker.sh
 
 # 4. Send test data
-uv run python tests/test_kafka_pipeline.py
+bash test_kafka_pipeline.sh
 
 # Expected output:
 # Metric 1 queued
@@ -761,7 +595,6 @@ SELECT add_retention_policy('metrics', INTERVAL '90 days');
 
 ### Documentation
 - [Kafka Documentation](https://kafka.apache.org/documentation/)
-- [aiokafka](https://aiokafka.readthedocs.io/)
 - [Confluent Kafka Guide](https://docs.confluent.io/platform/current/kafka/introduction.html)
 
 ### Learning
