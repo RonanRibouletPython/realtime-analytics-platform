@@ -36,6 +36,23 @@ until python -c "import socket; s = socket.socket(); s.settimeout(1); s.connect(
 done
 echo "Kafka is ready!"
 
+# Verify Kafka UI connection
+echo "Checking Kafka UI..."
+until curl -s http://localhost:8080; do
+  echo "Waiting for Kafka UI at http://localhost:8080..."
+  sleep 2
+done
+echo "Kafka UI is ready!"
+
+# Verify AVRO schema registry connection
+echo "Checking Schema Registry..."
+until curl -s http://localhost:8081; do
+  echo "Waiting for Schema Registry at http://localhost:8081..."
+  sleep 2
+done
+echo
+echo "Schema Registry is ready!"
+
 echo ""
 echo "DevContainer setup complete!"
 echo ""
