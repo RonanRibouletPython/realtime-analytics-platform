@@ -27,7 +27,7 @@ logger = structlog.get_logger()
 # Schema registry
 schema_registry = SchemaRegistryClient({"url": settings.SCHEMA_REGISTRY_URL})
 
-_schema_path = Path(__file__).parent / "app" / "schemas" / "metric_event_v2.avsc"
+_schema_path = Path(__file__).parent / "schemas" / "metric_event_v2.avsc"
 with open(_schema_path) as f:
     _reader_schema_str = f.read()
 

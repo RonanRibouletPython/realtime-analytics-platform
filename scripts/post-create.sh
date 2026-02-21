@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # This script runs after the devcontainer is created
-
+set -euo pipefail
 echo "Setting up development environment..."
 
 # Verify Python installation
@@ -53,12 +53,22 @@ done
 echo
 echo "Schema Registry is ready!"
 
+# Create Kafka topics
+KAFKA_CONTAINER="realtime-analytics-platform_devcontainer-kafka-1"
+KAFKA="docker exec -it $KAFKA_CONTAINER /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092"
+
+echo "Creating Kafka topics..."
+
+$KAFKA --create --if-not-exists --topic metrics_ingestion --partitions 3 --replication-factor 1
+echo "✅ metrics_ingestion"
+
+$KAFKA --create --if-not-exists --topic metrics_dlq --partitions 1 --replication-factor 1
+echo "✅ metrics_dlq"
+
+echo ""
+echo "All topics:"
+$KAFKA --list
+
 echo ""
 echo "DevContainer setup complete!"
-echo ""
-echo "Next steps:"
-echo "  1. cd services/ingestion"
-echo "  2. uv sync --dev"
-echo "  3. bash run.sh"
-echo "  4. bash worker.sh"
 echo ""

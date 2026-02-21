@@ -1,0 +1,21 @@
+[project]
+name = "query-service"
+version = "0.1.0"
+description = "Query Service — Time-series query routing, caching, and serving"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.29",
+    "redis[hiredis]>=5.0",
+    "prometheus-client>=0.20",
+    "shared",   # local workspace dependency
+]
+
+[tool.uv.sources]
+shared = { path = "../shared", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

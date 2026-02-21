@@ -63,7 +63,7 @@
       "label": "Schema Registry"
     }
   },
-  "postCreateCommand": "bash post-create.sh",
+  "postCreateCommand": "bash scripts/post-create.sh",
   "remoteUser": "vscode",
   "features": {
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
