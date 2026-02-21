@@ -47,7 +47,7 @@ graph TD
 ### Phase 2: Kafka Integration (Weeks 4-6)
 - [x] Add Kafka to Docker Compose
 - [x] Implement Kafka Producer in Ingestion Service
-- [ ] Implement Schema Registry (Avro)
+- [x] Implement Schema Registry (Avro)
 - [x] Create Consumer Service (Worker)
 - [x] End-to-end data flow (API -> Kafka -> DB)
 
