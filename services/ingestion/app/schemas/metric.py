@@ -9,6 +9,10 @@ class MetricBase(BaseModel):
     name: str = Field(..., description="Name of the metric (e.g., cpu_usage)")
     value: float = Field(..., description="Value of the metric")
     timestamp: dt = Field(default_factory=lambda: dt.now(tz.utc))
+    environment: str | None = Field(
+        default=None,
+        description="Deployment environment (e.g., production, staging)",
+    )
     labels: Dict[str, str] = Field(
         default_factory=dict, description="Metadata tags (e.g., host=server-1)"
     )

@@ -2,6 +2,7 @@ import asyncio
 import time
 from datetime import datetime as dt
 from datetime import timezone as tz
+from pathlib import Path
 
 import structlog
 from app.core.config import settings
@@ -26,7 +27,14 @@ logger = structlog.get_logger()
 # Schema registry
 schema_registry = SchemaRegistryClient({"url": settings.SCHEMA_REGISTRY_URL})
 
-avro_deserializer = AvroDeserializer(schema_registry)
+_schema_path = Path(__file__).parent / "app" / "schemas" / "metric_event_v2.avsc"
+with open(_schema_path) as f:
+    _reader_schema_str = f.read()
+
+avro_deserializer = AvroDeserializer(
+    schema_registry,
+    _reader_schema_str,  # reader schema — tells deserializer to return 'environment'
+)
 
 # Kafka consumer
 consumer = DeserializingConsumer(
@@ -66,6 +74,7 @@ async def process_message(message: Message) -> bool:
                 value=payload["value"],
                 timestamp=payload["timestamp"],
                 labels=payload.get("labels", {}),
+                environment=payload.get("environment"),
             )
 
             session.add(metric)

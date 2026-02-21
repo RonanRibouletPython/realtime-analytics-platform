@@ -89,9 +89,12 @@ services:
     environment:
       - KAFKA_CLUSTERS_0_NAME=local
       - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=localhost:9092
+      - KAFKA_CLUSTERS_0_SCHEMAREGISTRY=http://localhost:8081
     depends_on:
       kafka:
         condition: service_healthy
+      schema-registry:
+        condition: service_started
 
   schema-registry:
     image: confluentinc/cp-schema-registry:7.6.0

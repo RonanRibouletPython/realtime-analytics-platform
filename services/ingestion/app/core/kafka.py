@@ -56,7 +56,7 @@ def metric_to_dict(metric: dict, ctx) -> dict:
     if timestamp is None:
         raise ValueError("metric 'timestamp' field is required and cannot be None")
 
-    return {
+    result = {
         "name": metric.get("name"),
         "value": metric.get("value"),
         "timestamp": int(timestamp.astimezone(tz.utc).timestamp() * 1000),
@@ -65,6 +65,8 @@ def metric_to_dict(metric: dict, ctx) -> dict:
         # v2 serializer will use it. One conversion function, both versions.
         "environment": metric.get("environment", None),
     }
+    logger.info("debug_metric_to_dict", result=result)
+    return result
 
 
 _serializer_v1 = AvroSerializer(
@@ -150,8 +152,6 @@ async def send_metric(
             _base_producer.poll(0),
         ),
     )
-
-    logger.debug("metric_queued", version=version.value, name=metric.get("name"))
 
 
 async def check_kafka_health() -> None:

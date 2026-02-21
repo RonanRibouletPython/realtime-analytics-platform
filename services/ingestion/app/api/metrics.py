@@ -28,7 +28,7 @@ async def ingest_metric(metric_in: MetricCreate):
 
         # Send data to Kafka using the confluent_kafka producer
         # Note: This puts the message in the local buffer. It is non-blocking.
-        await send_metric(payload, version=SchemaVersion.V1)
+        await send_metric(payload, version=SchemaVersion.V2)
 
         logger.info("metric_queued", metric_name=metric_in.name, value=metric_in.value)
 

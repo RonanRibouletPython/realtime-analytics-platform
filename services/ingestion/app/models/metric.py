@@ -24,7 +24,7 @@ class Metric(Base):
     labels = Column(
         JSONB, nullable=False, server_default="{}"
     )  # JSONB: PostgreSQL's efficient JSON storage
-
+    environment = Column(String, nullable=True)
     # Composite index for efficient time-range queries
     # This will be crucial when we query "cpu_usage for the last hour"
     __table_args__ = (Index("idx_metrics_name_timestamp", "name", "timestamp"),)

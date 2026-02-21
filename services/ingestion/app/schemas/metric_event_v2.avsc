@@ -22,10 +22,10 @@
       "default": {}
     },
     {
-        "name": "environment",
-        "type": ["null", "string"],
-        "default": null,
-        "doc": "Deployment environment: production, staging, etc. Optional for backward compatibility"
+      "name": "environment",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Deployment environment: production, staging, etc. Optional for backward compatibility"
     }
   ]
 }
