@@ -1,35 +1,51 @@
 import asyncio
 import time
 from datetime import timezone as tz
+from enum import Enum
 from pathlib import Path
 
 import structlog
 from confluent_kafka import SerializingProducer
 from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroSerializer
-from confluent_kafka.serialization import StringSerializer
+from confluent_kafka.serialization import (
+    MessageField,
+    SerializationContext,
+    StringSerializer,
+)
 
 from app.core.config import settings
 
 logger = structlog.get_logger()
 
 
-# ── SCHEMA REGISTRY & AVRO SETUP ─────────────────────────────────────────────
+# SCHEMA VERSION ENUM
+# The caller imports this and passes it to send_metric().
+# Using an Enum instead of a raw string prevents typos like "v 1" or "V1"
+# from silently falling through to a wrong serializer.
+class SchemaVersion(str, Enum):
+    V1 = "v1"
+    V2 = "v2"
+
+
+# SCHEMA REGISTRY & AVRO SETUP
 _schema_registry = SchemaRegistryClient({"url": settings.SCHEMA_REGISTRY_URL})
 
-schema_path = Path(__file__).parent.parent / "schemas" / "metric_event_v1.avsc"
-with open(schema_path) as f:
-    metric_schema_str = f.read()
+_schemas_dir = Path(__file__).parent.parent / "schemas"
+
+
+def _load_schema(filename: str) -> str:
+    path = _schemas_dir / filename
+    with open(path) as f:
+        return f.read()
 
 
 def metric_to_dict(metric: dict, ctx) -> dict:
     """
-    Convert a metric dictionary to Avro-serializable format.
-
-    Raises:
-        ValueError: if timestamp is missing or not a datetime object.
-                    Surfaces as a clean error rather than a cryptic
-                    AttributeError deep inside the Avro serializer.
+    Shared conversion function for both v1 and v2.
+    v2's extra 'environment' field is passed through naturally via .get()
+    — if the caller doesn't provide it, it defaults to None, which maps
+    to Avro null, matching the schema default.
     """
     timestamp = metric.get("timestamp")
 
@@ -45,25 +61,42 @@ def metric_to_dict(metric: dict, ctx) -> dict:
         "value": metric.get("value"),
         "timestamp": int(timestamp.astimezone(tz.utc).timestamp() * 1000),
         "labels": metric.get("labels"),
+        # v1 serializer will ignore this key — it's not in the v1 schema.
+        # v2 serializer will use it. One conversion function, both versions.
+        "environment": metric.get("environment", None),
     }
 
 
-avro_serializer = AvroSerializer(
+_serializer_v1 = AvroSerializer(
     schema_registry_client=_schema_registry,
-    schema_str=metric_schema_str,
+    schema_str=_load_schema("metric_event_v1.avsc"),
     to_dict=metric_to_dict,
 )
 
-producer = SerializingProducer(
+_serializer_v2 = AvroSerializer(
+    schema_registry_client=_schema_registry,
+    schema_str=_load_schema("metric_event_v2.avsc"),
+    to_dict=metric_to_dict,
+)
+
+# Map enum → serializer for O(1) lookup, no if/elif chain
+_SERIALIZERS: dict[SchemaVersion, AvroSerializer] = {
+    SchemaVersion.V1: _serializer_v1,
+    SchemaVersion.V2: _serializer_v2,
+}
+
+# Single shared producer — no value.serializer set here because we inject
+# it per-message via the produce() call's own serialization context
+_base_producer = SerializingProducer(
     {
         "bootstrap.servers": settings.KAFKA_BOOTSTRAP_SERVERS,
         "key.serializer": StringSerializer("utf_8"),
-        "value.serializer": avro_serializer,
+        # No value.serializer here — we pass it per-produce() call below
     }
 )
 
 
-# ── DELIVERY CALLBACK ─────────────────────────────────────────────────────────
+# DELIVERY CALLBACK
 def delivery_report(err: object, msg: object) -> None:
     if err:
         logger.error("kafka_delivery_failed", error=str(err), topic=msg.topic())
@@ -76,74 +109,64 @@ def delivery_report(err: object, msg: object) -> None:
         )
 
 
-# ── PRODUCER FUNCTIONS ────────────────────────────────────────────────────────
-async def send_metric(metric: dict) -> None:
+# PUBLIC API
+async def send_metric(
+    metric: dict,
+    version: SchemaVersion = SchemaVersion.V2,  # default to latest
+) -> None:
     """
-    Async wrapper around confluent-kafka's synchronous produce() call.
+    Produce a metric event to Kafka using the specified schema version.
 
-    WHY run_in_executor:
-    producer.produce() and producer.poll() are blocking C-extension calls.
-    Calling them directly in an async FastAPI route freezes the entire event
-    loop for the duration of the call — every other request waits.
-    run_in_executor() offloads the blocking work to a thread pool, keeping
-    the event loop free to serve other requests while Kafka is being written to.
+    Args:
+        metric: The metric payload as a dict.
+        version: Schema version to serialize with. Defaults to V2 (latest).
+                 Pass SchemaVersion.V1 for legacy routes that haven't migrated.
 
-    NOTE: this function is now async — any caller must await it.
-    Update your route: `await send_metric(metric.model_dump())`
+    Usage:
+        # Default — uses v2
+        await send_metric(metric.model_dump())
+
+        # Explicit version — for routes that haven't migrated yet
+        await send_metric(metric.model_dump(), version=SchemaVersion.V1)
     """
+    serializer = _SERIALIZERS[version]
     loop = asyncio.get_running_loop()
 
-    # FIX 2: offload blocking produce() + poll() to a thread
-    # We wrap both calls in a single lambda so they execute together
-    # in the same thread, maintaining the correct poll-after-produce ordering.
+    # FIX: build a proper SerializationContext so the AvroSerializer
+    # can resolve the subject name (metrics.raw-value) from the topic.
+    # MessageField.VALUE tells it we're serializing the message value,
+    # not the key — subject name strategy depends on this distinction.
+    ctx = SerializationContext(settings.KAFKA_TOPIC_METRICS, MessageField.VALUE)
+
     await loop.run_in_executor(
-        None,  # default ThreadPoolExecutor
+        None,
         lambda: (
-            producer.produce(
+            _base_producer.produce(
                 topic=settings.KAFKA_TOPIC_METRICS,
                 key=metric.get("name"),
-                value=metric,
+                value=serializer(metric, ctx),  # serialize manually before produce
                 on_delivery=delivery_report,
             ),
-            producer.poll(0),
+            _base_producer.poll(0),
         ),
     )
 
+    logger.debug("metric_queued", version=version.value, name=metric.get("name"))
+
 
 async def check_kafka_health() -> None:
-    """
-    Probe broker reachability by fetching cluster metadata.
-
-    list_topics() does a real round-trip to the broker — if it completes
-    within the timeout, the broker is up and the producer is connected.
-    If it times out or throws, we let the exception propagate to the
-    /kafka_health endpoint which catches it and returns 503.
-
-    Raises:
-        Exception: any broker connectivity or timeout error.
-    """
     loop = asyncio.get_running_loop()
-
-    # NEW: same run_in_executor pattern — list_topics() is also a
-    # blocking call so we keep it off the event loop.
     await loop.run_in_executor(
         None,
-        lambda: producer.list_topics(timeout=3.0),
+        lambda: _base_producer.list_topics(timeout=3.0),
     )
-
     logger.debug("kafka_health_check_passed")
 
 
 def flush_producer() -> None:
-    """
-    Flush the producer buffer on shutdown.
-    Blocking by design — called from lifespan() after yield,
-    outside the async context, so no run_in_executor needed here.
-    """
     logger.info("kafka_flushing_messages")
     start = time.time()
-    remaining = producer.flush(timeout=10.0)
-
+    remaining = _base_producer.flush(timeout=10.0)
     if remaining > 0:
         logger.error("kafka_flush_incomplete", remaining=remaining)
     else:
