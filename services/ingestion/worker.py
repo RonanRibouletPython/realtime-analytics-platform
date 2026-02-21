@@ -7,9 +7,9 @@ import structlog
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.dlq import send_to_dlq
-from app.core.metrics_tracker import tracker
+from app.core.metrics_tracker import start_metrics_server, tracker
 from app.models.metric import Metric
-from confluent_kafka import DeserializingConsumer, KafkaException
+from confluent_kafka import DeserializingConsumer, KafkaException, Message
 from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroDeserializer
 from confluent_kafka.serialization import StringDeserializer
@@ -43,15 +43,21 @@ consumer = DeserializingConsumer(
 consumer.subscribe([settings.KAFKA_TOPIC_METRICS])
 
 
-async def process_message(payload: dict) -> bool:
+async def process_message(message: Message) -> bool:
     """
     Process one Kafka message.
 
+    Args:
+        message: The raw confluent_kafka.Message — we pass the full object now,
+             not just the payload, so we can forward it to the DLQ with
+             full forensics context if processing fails.
+
     Returns:
-        True  -> commit offset
-        False -> retry
+        True  → commit offset (success or permanent failure routed to DLQ)
+        False → do not commit (transient failure, will retry on next poll)
     """
     start_time = time.time()
+    payload = message.value()
 
     try:
         async with AsyncSessionLocal() as session:
@@ -77,36 +83,54 @@ async def process_message(payload: dict) -> bool:
         return True
 
     except ValueError as e:
-        logger.error("invalid_message", error=str(e), payload=payload)
-        send_to_dlq(payload, str(e))
-        tracker.record_dlq()
-        return True
+        # Permanent failure: malformed data. No retry will fix this.
+        # Route to DLQ and commit the offset to skip past it.
+        logger.error("invalid_message_routed_to_dlq", error=str(e), payload=payload)
+        # FIX 1: was missing 'await' — DLQ was silently never called
+        await send_to_dlq(message, error=str(e), reason="ValueError")
+        # FIX 2: pass reason string so Prometheus label is meaningful
+        tracker.record_dlq(reason="ValueError")
+        return True  # Commit: we've handled it (via DLQ), move on
 
     except Exception as e:
-        logger.error("processing_failed", error=str(e), payload=payload)
+        # Transient failure: DB might be down, connection pool exhausted, etc.
+        # Do not commit — let Kafka redeliver this message after a reconnect.
+        logger.error("processing_failed_will_retry", error=str(e), payload=payload)
         tracker.record_failure()
         return False
 
 
 async def consume():
+    # Start Prometheus metrics server before the consume loop.
+    # ODD principle: observability up before workload begins.
+    start_metrics_server(port=8001)
+
     logger.info("worker_started", topic=settings.KAFKA_TOPIC_METRICS)
+
+    loop = asyncio.get_running_loop()
 
     try:
         while True:
-            msg = consumer.poll(1.0)
+            # FIX 3: Run blocking poll() in a thread executor.
+            # Without this, consumer.poll(1.0) freezes the entire event loop
+            # for 1 second — no DB writes, no coroutines, nothing.
+            # run_in_executor offloads it to a thread while the loop stays free.
+            message: Message | None = await loop.run_in_executor(
+                None,  # uses the default ThreadPoolExecutor
+                consumer.poll,  # the blocking function
+                1.0,  # poll timeout in seconds
+            )
 
-            if msg is None:
+            if message is None:
                 continue
 
-            if msg.error():
-                raise KafkaException(msg.error())
+            if message.error():
+                raise KafkaException(message.error())
 
-            payload = msg.value()
-
-            success = await process_message(payload)
+            success = await process_message(message)
 
             if success:
-                consumer.commit(msg)
+                consumer.commit(message=message)
 
     except Exception as e:
         logger.critical("worker_crashed", error=str(e))
@@ -116,8 +140,6 @@ async def consume():
 
 
 if __name__ == "__main__":
-    import asyncio
-
     try:
         asyncio.run(consume())
     except KeyboardInterrupt:

@@ -2,6 +2,7 @@
   "type": "record",
   "name": "MetricEvent",
   "namespace": "com.analytics.metrics",
+  "doc": "A real-time metric event from a tenant. Version 1.",
   "fields": [
     { "name": "name", "type": "string" },
     { "name": "value", "type": "double" },

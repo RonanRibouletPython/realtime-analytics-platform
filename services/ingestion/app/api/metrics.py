@@ -21,15 +21,15 @@ async def ingest_metric(metric_in: MetricCreate):
     Step 2 of the project:
     Ingest a new metric data point and push to Kafka.
     """
-    
+
     try:
         # Convert Pydantic model to dict (keeping datetime objects for the Avro serializer)
         payload = metric_in.model_dump()
 
         # Send data to Kafka using the confluent_kafka producer
         # Note: This puts the message in the local buffer. It is non-blocking.
-        send_metric(payload)
-        
+        await send_metric(payload)
+
         logger.info("metric_queued", metric_name=metric_in.name, value=metric_in.value)
 
         return {

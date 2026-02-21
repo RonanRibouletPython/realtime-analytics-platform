@@ -40,6 +40,8 @@ RUN apt-get update && apt-get install -y \
     sudo \
     less \
     procps \
+    tree \
+    lsof \
     # Shell
     zsh \
     && rm -rf /var/lib/apt/lists/*

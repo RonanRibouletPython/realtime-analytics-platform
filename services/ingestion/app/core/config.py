@@ -25,9 +25,13 @@ class Settings(BaseSettings):
     KAFKA_TOPIC_METRICS: str = "metrics_ingestion"
     # DLQ config
     KAFKA_TOPIC_METRICS_DLQ: str = "metrics_dlq"
-    
+
     # AVRO schema registry URL
     SCHEMA_REGISTRY_URL: str = "http://localhost:8081"
+    SCHEMA_REGISTRY_SUBJECT: str = "metrics.raw-value"
+
+    # Observability
+    PROMETHEUS_PORT: int = 8001
 
     @property
     def DB_URL(
