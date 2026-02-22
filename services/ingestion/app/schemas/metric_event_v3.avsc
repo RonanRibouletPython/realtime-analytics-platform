@@ -1,0 +1,34 @@
+{
+  "type": "record",
+  "name": "MetricEvent",
+  "namespace": "com.analytics.metrics",
+  "doc": "A real-time metric event from a tenant. Version 2.",
+  "fields": [
+    { "name": "name", "type": "string" },
+    { "name": "value", "type": "double" },
+    {
+      "name": "timestamp",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      }
+    },
+    {
+      "name": "labels",
+      "type": {
+        "type": "map",
+        "values": "string"
+      },
+      "default": {}
+    },
+    {
+      "name": "environment",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Deployment environment: production, staging, etc. Optional for backward compatibility"
+    },
+    {
+      "name": "tenant_id", "type": "string"
+    }
+  ]
+}

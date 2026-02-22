@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class MetricBase(BaseModel):
     name: str = Field(..., description="Name of the metric (e.g., cpu_usage)")
+    tenant_id: str | None = Field(default=None, description="Tenant ID")
     value: float = Field(..., description="Value of the metric")
     timestamp: dt = Field(default_factory=lambda: dt.now(tz.utc))
     environment: str | None = Field(
@@ -20,6 +21,7 @@ class MetricBase(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
+                "tenant_id": "tenant-1",
                 "name": "cpu_usage",
                 "value": 75.32,
                 "timestamp": dt.now(tz.utc),

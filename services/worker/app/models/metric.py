@@ -1,10 +1,11 @@
 from datetime import datetime as dt
 
-from app.core.database import Base
 from pydantic import BaseModel
 from sqlalchemy import Column, DateTime, Float, Index, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
+
+from app.core.database import Base
 
 
 class Metric(Base):
@@ -25,6 +26,7 @@ class Metric(Base):
         JSONB, nullable=False, server_default="{}"
     )  # JSONB: PostgreSQL's efficient JSON storage
     environment = Column(String, nullable=True)
+    tenant_id = Column(String, nullable=False, index=True)
     # Composite index for efficient time-range queries
     # This will be crucial when we query "cpu_usage for the last hour"
     __table_args__ = (Index("idx_metrics_name_timestamp", "name", "timestamp"),)

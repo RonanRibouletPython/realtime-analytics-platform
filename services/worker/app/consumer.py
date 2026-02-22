@@ -5,15 +5,16 @@ from datetime import timezone as tz
 from pathlib import Path
 
 import structlog
+from confluent_kafka import DeserializingConsumer, KafkaException, Message
+from confluent_kafka.schema_registry import SchemaRegistryClient
+from confluent_kafka.schema_registry.avro import AvroDeserializer
+from confluent_kafka.serialization import StringDeserializer
+
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.dlq import send_to_dlq
 from app.core.metrics_tracker import start_metrics_server, tracker
 from app.models.metric import Metric
-from confluent_kafka import DeserializingConsumer, KafkaException, Message
-from confluent_kafka.schema_registry import SchemaRegistryClient
-from confluent_kafka.schema_registry.avro import AvroDeserializer
-from confluent_kafka.serialization import StringDeserializer
 
 logger = structlog.get_logger()
 
@@ -27,7 +28,7 @@ logger = structlog.get_logger()
 # Schema registry
 schema_registry = SchemaRegistryClient({"url": settings.SCHEMA_REGISTRY_URL})
 
-_schema_path = Path(__file__).parent / "schemas" / "metric_event_v2.avsc"
+_schema_path = Path(__file__).parent / "schemas" / "metric_event_v3.avsc"
 with open(_schema_path) as f:
     _reader_schema_str = f.read()
 
@@ -75,6 +76,7 @@ async def process_message(message: Message) -> bool:
                 timestamp=payload["timestamp"],
                 labels=payload.get("labels", {}),
                 environment=payload.get("environment"),
+                tenant_id=payload.get("tenant_id"),
             )
 
             session.add(metric)

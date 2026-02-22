@@ -26,6 +26,7 @@ logger = structlog.get_logger()
 class SchemaVersion(str, Enum):
     V1 = "v1"
     V2 = "v2"
+    V3 = "v3"
 
 
 # SCHEMA REGISTRY & AVRO SETUP
@@ -64,6 +65,8 @@ def metric_to_dict(metric: dict, ctx) -> dict:
         # v1 serializer will ignore this key — it's not in the v1 schema.
         # v2 serializer will use it. One conversion function, both versions.
         "environment": metric.get("environment", None),
+        # v3 serializer will use this key.
+        "tenant_id": metric.get("tenant_id", None),
     }
     logger.info("debug_metric_to_dict", result=result)
     return result
@@ -81,10 +84,17 @@ _serializer_v2 = AvroSerializer(
     to_dict=metric_to_dict,
 )
 
+_serializer_v3 = AvroSerializer(
+    schema_registry_client=_schema_registry,
+    schema_str=_load_schema("metric_event_v3.avsc"),
+    to_dict=metric_to_dict,
+)
+
 # Map enum → serializer for O(1) lookup, no if/elif chain
 _SERIALIZERS: dict[SchemaVersion, AvroSerializer] = {
     SchemaVersion.V1: _serializer_v1,
     SchemaVersion.V2: _serializer_v2,
+    SchemaVersion.V3: _serializer_v3,
 }
 
 # Single shared producer — no value.serializer set here because we inject
